@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>hellas-falcon-bench</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  .meta { color: #666; font-size: 0.85rem; margin-bottom: 32px; }
+  h2 { font-size: 1rem; text-transform: uppercase; letter-spacing: 0.05em; color: #555; margin: 32px 0 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+  th { background: #f4f4f4; text-align: left; padding: 8px 12px; border-bottom: 2px solid #ddd; white-space: nowrap; }
+  td { padding: 7px 12px; border-bottom: 1px solid #eee; }
+  tr:last-child td { border-bottom: none; }
+  .good { color: #1a7f37; font-weight: 600; }
+  .warn { color: #b35000; }
+  .num { text-align: right; }
+</style>
+</head>
+<body>
+<h1>hellas-falcon-bench — Comparison Summary</h1>
+<div class="meta">4-guardian Falcon-512 BFT · Docker · Apple M4 · 2 vCPU + 2 GB / guardian<br>Generated: Thu May 14 16:09:27 PDT 2026</div>
+
+<h2>Transaction Size</h2>
+<table>
+  <tr><th>Scheme</th><th class="num">Bytes / tx</th><th>vs Ed25519</th></tr>
+  <tr><td>Ed25519</td><td class="num">134</td><td>baseline</td></tr>
+  <tr><td>Falcon-512</td><td class="num">730</td><td>5.4x</td></tr>
+</table>
+
+<h2>Per-Level Results</h2>
+<table>
+  <tr>
+    <th>Target TPS</th>
+    <th class="num">F-512 accepted</th><th class="num">F-512 rej%</th><th class="num">F-512 latency</th>
+    <th class="num">Ed25519 accepted</th><th class="num">Ed25519 rej%</th><th class="num">Ed25519 latency</th>
+  </tr>
+  <tr><td>1000</td><td class="num">29938</td><td class="num good">0.0%</td><td class="num">0ms</td><td class="num">29498</td><td class="num warn">1.7%</td><td class="num">0ms</td></tr>
+  <tr><td>1100</td><td class="num">33005</td><td class="num good">0.0%</td><td class="num">0ms</td><td class="num">32236</td><td class="num warn">2.3%</td><td class="num">0ms</td></tr>
+  <tr><td>1200</td><td class="num">36015</td><td class="num good">0.0%</td><td class="num">3ms</td><td class="num">35346</td><td class="num warn">1.9%</td><td class="num">0ms</td></tr>
+  <tr><td>1300</td><td class="num">39013</td><td class="num good">0.0%</td><td class="num">190ms</td><td class="num">38731</td><td class="num warn">0.7%</td><td class="num">0ms</td></tr>
+  <tr><td>1400</td><td class="num">42014</td><td class="num warn">0.0%</td><td class="num">1233ms</td><td class="num">40798</td><td class="num warn">2.9%</td><td class="num">0ms</td></tr>
+</table></body></html>

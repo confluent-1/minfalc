@@ -1,0 +1,45 @@
+[package]
+authors = { workspace = true }
+description = "fedimint-rocksdb provides a rocksdb-backed database implementation for Fedimint."
+edition = { workspace = true }
+license = { workspace = true }
+name = "fedimint-rocksdb"
+readme = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+
+[package.metadata.docs.rs]
+rustc-args = ["--cfg", "tokio_unstable"]
+
+[features]
+default = []
+jemalloc = ["rocksdb/jemalloc"]
+
+[lib]
+name = "fedimint_rocksdb"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+bon = { workspace = true }
+fedimint-core = { workspace = true }
+fedimint-db-locked = { workspace = true }
+fedimint-logging = { workspace = true }
+futures = { workspace = true }
+rocksdb = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(not(target_family="wasm"))'.dependencies]
+tokio = { workspace = true, features = [
+    "rt",
+    "rt-multi-thread",
+    "sync",
+    "time",
+] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

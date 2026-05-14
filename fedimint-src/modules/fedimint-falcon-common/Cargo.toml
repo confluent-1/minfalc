@@ -1,0 +1,24 @@
+[package]
+authors = { workspace = true }
+description = "Falcon-512 post-quantum transaction signing module for hellas-falcon-bench (common types)"
+edition = { workspace = true }
+license = { workspace = true }
+name = "fedimint-falcon-common"
+readme = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+
+[lib]
+name = "fedimint_falcon_common"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+fedimint-core = { workspace = true }
+pqcrypto-falcon = { workspace = true }
+pqcrypto-traits = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

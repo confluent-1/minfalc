@@ -1,0 +1,160 @@
+name: hellas-falcon-bench
+
+# ── Benchmark hardware context ────────────────────────────────────────────────
+# Label: 4-guardian Falcon-512 BFT · Docker · Apple M4 · 2 vCPU + 2 GB / guardian
+# Network: Docker bridge, ~0.5–2 ms inter-container latency
+# Note: single-machine simulation — not representative of geo-distributed deployment
+
+services:
+
+  bitcoind:
+    image: lncm/bitcoind:v27.0
+    command: >-
+      -regtest
+      -datadir=/data/.bitcoin
+      -rpcport=18443
+      -rpcuser=bitcoin
+      -rpcpassword=bitcoin
+      -rpcbind=0.0.0.0
+      -rpcallowip=0.0.0.0/0
+      -fallbackfee=0.0001
+      -printtoconsole
+    ports:
+      - "18443:18443"
+    volumes:
+      - bitcoin-data:/data
+    networks:
+      - federation
+
+  guardian-0:
+    build:
+      context: ./fedimint-src
+    image: hellas-falcon-bench:latest
+    command: ["--data-dir", "/data",
+              "--bitcoind-url", "http://bitcoind:18443",
+              "--bitcoind-username", "bitcoin",
+              "--bitcoind-password", "bitcoin"]
+    environment:
+      FM_BIND_P2P:    "0.0.0.0:8173"
+      FM_BIND_API:    "0.0.0.0:8174"
+      FM_BIND_UI:     "0.0.0.0:8175"
+      FM_BIND_METRICS: "0.0.0.0:8176"
+      FM_P2P_URL:     "fedimint://guardian-0:8173"
+      FM_API_URL:     "ws://guardian-0:8174"
+      FM_FORCE_BITCOIN_RPC_URL:  "http://bitcoin:bitcoin@bitcoind:18443"
+      FM_FORCE_BITCOIN_RPC_KIND: "bitcoind"
+      RUST_LOG: "info"
+    ports:
+      - "8174:8174"
+    volumes:
+      - guardian-0-data:/data
+    networks:
+      - federation
+    depends_on:
+      - bitcoind
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+
+  guardian-1:
+    image: hellas-falcon-bench:latest
+    command: ["--data-dir", "/data",
+              "--bitcoind-url", "http://bitcoind:18443",
+              "--bitcoind-username", "bitcoin",
+              "--bitcoind-password", "bitcoin"]
+    environment:
+      FM_BIND_P2P:    "0.0.0.0:8183"
+      FM_BIND_API:    "0.0.0.0:8184"
+      FM_BIND_UI:     "0.0.0.0:8185"
+      FM_BIND_METRICS: "0.0.0.0:8186"
+      FM_P2P_URL:     "fedimint://guardian-1:8183"
+      FM_API_URL:     "ws://guardian-1:8184"
+      FM_FORCE_BITCOIN_RPC_URL:  "http://bitcoin:bitcoin@bitcoind:18443"
+      FM_FORCE_BITCOIN_RPC_KIND: "bitcoind"
+      RUST_LOG: "info"
+    ports:
+      - "8184:8184"
+    volumes:
+      - guardian-1-data:/data
+    networks:
+      - federation
+    depends_on:
+      - bitcoind
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+
+  guardian-2:
+    image: hellas-falcon-bench:latest
+    command: ["--data-dir", "/data",
+              "--bitcoind-url", "http://bitcoind:18443",
+              "--bitcoind-username", "bitcoin",
+              "--bitcoind-password", "bitcoin"]
+    environment:
+      FM_BIND_P2P:    "0.0.0.0:8193"
+      FM_BIND_API:    "0.0.0.0:8194"
+      FM_BIND_UI:     "0.0.0.0:8195"
+      FM_BIND_METRICS: "0.0.0.0:8196"
+      FM_P2P_URL:     "fedimint://guardian-2:8193"
+      FM_API_URL:     "ws://guardian-2:8194"
+      FM_FORCE_BITCOIN_RPC_URL:  "http://bitcoin:bitcoin@bitcoind:18443"
+      FM_FORCE_BITCOIN_RPC_KIND: "bitcoind"
+      RUST_LOG: "info"
+    ports:
+      - "8194:8194"
+    volumes:
+      - guardian-2-data:/data
+    networks:
+      - federation
+    depends_on:
+      - bitcoind
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+
+  guardian-3:
+    image: hellas-falcon-bench:latest
+    command: ["--data-dir", "/data",
+              "--bitcoind-url", "http://bitcoind:18443",
+              "--bitcoind-username", "bitcoin",
+              "--bitcoind-password", "bitcoin"]
+    environment:
+      FM_BIND_P2P:    "0.0.0.0:8203"
+      FM_BIND_API:    "0.0.0.0:8204"
+      FM_BIND_UI:     "0.0.0.0:8205"
+      FM_BIND_METRICS: "0.0.0.0:8206"
+      FM_P2P_URL:     "fedimint://guardian-3:8203"
+      FM_API_URL:     "ws://guardian-3:8204"
+      FM_FORCE_BITCOIN_RPC_URL:  "http://bitcoin:bitcoin@bitcoind:18443"
+      FM_FORCE_BITCOIN_RPC_KIND: "bitcoind"
+      RUST_LOG: "info"
+    ports:
+      - "8204:8204"
+    volumes:
+      - guardian-3-data:/data
+    networks:
+      - federation
+    depends_on:
+      - bitcoind
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+
+volumes:
+  bitcoin-data:
+  guardian-0-data:
+  guardian-1-data:
+  guardian-2-data:
+  guardian-3-data:
+
+networks:
+  federation:
+    driver: bridge

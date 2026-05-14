@@ -1,0 +1,25 @@
+[package]
+authors = { workspace = true }
+description = "Falcon-512 transfer module client — hellas-falcon-bench"
+edition = { workspace = true }
+license = { workspace = true }
+name = "fedimint-falcon-client"
+readme = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+
+[lib]
+name = "fedimint_falcon_client"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+fedimint-core = { workspace = true }
+fedimint-falcon-common = { workspace = true }
+pqcrypto-falcon = { workspace = true }
+pqcrypto-traits = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+
+[lints]
+workspace = true

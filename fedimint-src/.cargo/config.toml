@@ -1,0 +1,9 @@
+[build]
+# jemalloc's configure script rejects paths containing spaces.
+# The default target dir inherits the workspace path which has "Claude Code" in it.
+target-dir = "/tmp/hellas-falcon-build"
+
+[env]
+# macOS CLT: make C++ stdlib headers (cstdint etc.) visible to librocksdb-sys and jemalloc.
+CPLUS_INCLUDE_PATH = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1"
+CXXFLAGS = "-isystem /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1"

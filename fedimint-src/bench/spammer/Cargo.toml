@@ -1,0 +1,33 @@
+[package]
+authors = { workspace = true }
+description = "Falcon-512 transaction spammer for hellas-falcon-bench"
+edition = { workspace = true }
+license = { workspace = true }
+name = "falcon-spammer"
+readme = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+
+[[bin]]
+name = "falcon-spammer"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+hex = { workspace = true }
+fedimint-api-client = { workspace = true }
+fedimint-connectors = { workspace = true }
+fedimint-core = { workspace = true }
+fedimint-falcon-client = { workspace = true }
+fedimint-falcon-common = { workspace = true }
+pqcrypto-falcon = { workspace = true }
+pqcrypto-traits = { workspace = true }
+rand = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[lints]
+workspace = true

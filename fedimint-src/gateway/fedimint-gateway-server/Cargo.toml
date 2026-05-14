@@ -1,0 +1,118 @@
+[package]
+authors = { workspace = true }
+description = "fedimint-gateway-server sends/receives Lightning Network payments on behalf of Fedimint clients"
+edition = { workspace = true }
+license = { workspace = true }
+name = "fedimint-gateway-server"
+readme = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+
+[features]
+tor = [
+    "fedimint-client/tor",
+    "fedimint-api-client/tor",
+    "fedimint-gateway-common/tor",
+]
+
+[[bin]]
+name = "gatewayd"
+path = "src/bin/gatewayd.rs"
+
+[lib]
+name = "fedimint_gateway_server"
+path = "src/lib.rs"
+
+[[test]]
+name = "gatewayd-tests"
+path = "tests/tests.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+aquamarine = { workspace = true }
+async-stream = { workspace = true }
+async-trait = { workspace = true }
+axum = { workspace = true, features = ["json"] }
+bcrypt = { workspace = true }
+bitcoin = { workspace = true }
+bon = { workspace = true }
+clap = { workspace = true }
+erased-serde = { workspace = true }
+esplora-client = { workspace = true }
+fedimint-api-client = { workspace = true }
+fedimint-bip39 = { workspace = true }
+fedimint-bitcoind = { workspace = true, features = ["bitcoincore"] }
+fedimint-client = { workspace = true }
+fedimint-client-module = { workspace = true }
+fedimint-connectors = { workspace = true }
+fedimint-core = { workspace = true }
+fedimint-cursed-redb = { workspace = true }
+fedimint-derive-secret = { workspace = true }
+fedimint-eventlog = { workspace = true }
+fedimint-gateway-common = { workspace = true }
+fedimint-gateway-server-db = { workspace = true }
+fedimint-gateway-ui = { workspace = true }
+fedimint-gw-client = { workspace = true }
+fedimint-gwv2-client = { workspace = true }
+fedimint-lightning = { workspace = true }
+fedimint-ln-client = { workspace = true }
+fedimint-ln-common = { workspace = true }
+fedimint-lnurl = { workspace = true }
+fedimint-lnv2-client = { workspace = true }
+fedimint-lnv2-common = { workspace = true }
+fedimint-logging = { workspace = true }
+fedimint-metrics = { workspace = true }
+fedimint-mint-client = { workspace = true }
+fedimint-mintv2-client = { workspace = true }
+fedimint-rocksdb = { workspace = true }
+fedimint-wallet-client = { workspace = true }
+fedimint-walletv2-client = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
+hex = { workspace = true }
+iroh = { workspace = true, features = [
+    "discovery-pkarr-dht",
+], default-features = false }
+iroh-base = { workspace = true, default-features = false, features = [
+    "ticket",
+] }
+iroh-relay = { workspace = true, default-features = false }
+lightning-invoice = { workspace = true }
+lockable = { workspace = true }
+prost = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
+strum_macros = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tonic = { workspace = true, features = ["transport", "tls-ring"] }
+tonic_lnd = { workspace = true }
+tower-http = { workspace = true, features = ["cors", "auth"] }
+tracing = { workspace = true, features = ["log"] }
+url = { workspace = true, features = ["serde"] }
+
+[target.'cfg(not(any(target_env = "msvc", target_os = "ios", target_os = "android")))'.dependencies]
+tikv-jemallocator = { workspace = true }
+
+[dev-dependencies]
+assert_matches = { workspace = true }
+fedimint-dummy-client = { workspace = true }
+fedimint-dummy-common = { workspace = true }
+fedimint-dummy-server = { workspace = true }
+fedimint-ln-server = { workspace = true }
+fedimint-lnv2-server = { workspace = true }
+fedimint-testing = { workspace = true }
+fedimint-unknown-common = { workspace = true }
+fedimint-unknown-server = { workspace = true }
+itertools = { workspace = true }
+tpe = { workspace = true }
+
+[build-dependencies]
+fedimint-build = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,688 @@
+use std::collections::BTreeSet;
+
+use axum::Router;
+use axum::extract::State;
+use axum::response::{Html, IntoResponse, Redirect};
+use axum::routing::{get, post};
+use axum_extra::extract::Form;
+use axum_extra::extract::cookie::CookieJar;
+use fedimint_core::core::ModuleKind;
+use fedimint_core::module::ApiAuth;
+use fedimint_server_core::setup_ui::DynSetupApi;
+use fedimint_ui_common::assets::WithStaticRoutesExt;
+use fedimint_ui_common::auth::UserAuth;
+use fedimint_ui_common::{
+    CONNECTIVITY_CHECK_ROUTE, LOGIN_ROUTE, LoginInput, ROOT_ROUTE, UiState,
+    connectivity_check_handler, copiable_text, login_form, login_submit_response,
+    single_card_layout,
+};
+use maud::{Markup, PreEscaped, html};
+use qrcode::QrCode;
+use serde::Deserialize;
+
+// Setup route constants
+pub const FEDERATION_SETUP_ROUTE: &str = "/federation_setup";
+pub const ADD_SETUP_CODE_ROUTE: &str = "/add_setup_code";
+pub const RESET_SETUP_CODES_ROUTE: &str = "/reset_setup_codes";
+pub const START_DKG_ROUTE: &str = "/start_dkg";
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct SetupInput {
+    pub password: String,
+    pub name: String,
+    #[serde(default)]
+    pub is_lead: bool,
+    pub federation_name: String,
+    #[serde(default)]
+    pub federation_size: String,
+    #[serde(default)] // will not be sent if disabled
+    pub enable_base_fees: bool,
+    #[serde(default)] // list of enabled module kinds
+    pub enabled_modules: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct PeerInfoInput {
+    pub peer_info: String,
+}
+
+fn peer_list_section(
+    connected_peers: &[String],
+    federation_size: Option<u32>,
+    cfg_federation_name: &Option<String>,
+    cfg_base_fees_disabled: Option<bool>,
+    cfg_enabled_modules: &Option<BTreeSet<ModuleKind>>,
+    error: Option<&str>,
+) -> Markup {
+    let total_guardians = connected_peers.len() + 1;
+    let can_start_dkg = federation_size
+        .map(|expected| total_guardians == expected as usize)
+        .unwrap_or(false);
+
+    html! {
+        div id="peer-list-section" {
+            @if let Some(expected) = federation_size {
+                p { (format!("{total_guardians} of {expected} guardians connected.")) }
+            } @else {
+                p { "Add setup code for every other guardian." }
+            }
+
+            @if !connected_peers.is_empty() {
+                ul class="list-group mb-2" {
+                    @for peer in connected_peers {
+                        li class="list-group-item" { (peer) }
+                    }
+                }
+
+                form id="reset-form" method="post" action=(RESET_SETUP_CODES_ROUTE) class="d-none" {}
+                div class="text-center mb-4" {
+                    button type="button" class="btn btn-link text-danger text-decoration-none p-0" onclick="if(confirm('Are you sure you want to reset all guardians?')){document.getElementById('reset-form').submit();}" {
+                        "Reset Guardians"
+                    }
+                }
+            }
+
+            @if can_start_dkg {
+                // All guardians connected — show confirm form
+                @let has_settings = cfg_federation_name.is_some()
+                    || federation_size.is_some()
+                    || cfg_base_fees_disabled.is_some()
+                    || cfg_enabled_modules.is_some();
+
+                form id="start-dkg-form" hx-post=(START_DKG_ROUTE) hx-target="#peer-list-section" hx-swap="outerHTML" {
+                    @if let Some(error) = error {
+                        div class="alert alert-danger mb-3" { (error) }
+                    }
+                    button type="submit" class="btn btn-warning w-100 py-2" { "Confirm" }
+                }
+
+                @if has_settings {
+                    p class="text-muted mt-3 mb-0" style="font-size: 0.85rem;" {
+                        @if let Some(name) = cfg_federation_name {
+                            (name) " federation has been configured"
+                        } @else {
+                            "The federation has been configured"
+                        }
+                        @if let Some(disabled) = cfg_base_fees_disabled {
+                            " with base fees "
+                            @if disabled { "disabled" } @else { "enabled" }
+                        }
+                        @if let Some(modules) = cfg_enabled_modules {
+                            " and modules "
+                            (modules.iter().map(|m| m.as_str().to_owned()).collect::<Vec<_>>().join(", "))
+                        }
+                        "."
+                    }
+                }
+            } @else {
+                // Still collecting — show add guardian form
+                form id="add-setup-code-form" hx-post=(ADD_SETUP_CODE_ROUTE) hx-target="#peer-list-section" hx-swap="outerHTML" {
+                    div class="mb-3" {
+                        div class="input-group" {
+                            input type="text" class="form-control" id="peer_info" name="peer_info"
+                                placeholder="Paste Setup Code" required;
+                            button type="button" class="btn btn-outline-secondary" onclick="startQrScanner()" title="Scan QR Code" {
+                                i class="bi bi-qr-code-scan" {}
+                            }
+                        }
+                    }
+
+                    @if let Some(error) = error {
+                        div class="alert alert-danger mb-3" { (error) }
+                    }
+                    button type="submit" class="btn btn-primary w-100 py-2" { "Add Guardian" }
+                }
+            }
+        }
+    }
+}
+
+fn setup_form_content(
+    available_modules: &BTreeSet<ModuleKind>,
+    default_modules: &BTreeSet<ModuleKind>,
+    error: Option<&str>,
+) -> Markup {
+    html! {
+        form id="setup-form" hx-post=(ROOT_ROUTE) hx-target="#setup-form" hx-swap="outerHTML" {
+            style {
+                r#"
+                .toggle-content {
+                    display: none;
+                }
+
+                .toggle-control:checked ~ .toggle-content {
+                    display: block;
+                }
+
+                #base-fees-warning {
+                    display: block;
+                }
+
+                .form-check:has(#enable_base_fees:checked) + #base-fees-warning {
+                    display: none;
+                }
+
+                .accordion-button {
+                    background-color: #f8f9fa;
+                }
+
+                .accordion-button:not(.collapsed) {
+                    background-color: #f8f9fa;
+                    box-shadow: none;
+                }
+
+                .accordion-button:focus {
+                    box-shadow: none;
+                }
+
+                #modules-warning {
+                    display: none;
+                }
+
+                #modules-list:has(.form-check-input:not(:checked)) ~ #modules-warning {
+                    display: block;
+                }
+                "#
+            }
+
+            div class="form-group mb-4" {
+                input type="text" class="form-control" id="name" name="name" placeholder="Your Guardian Name" required;
+            }
+
+            div class="form-group mb-4" {
+                input type="password" class="form-control" id="password" name="password" placeholder="Your Password" required;
+            }
+
+            div class="alert alert-warning mb-3" style="font-size: 0.875rem;" {
+                "Exactly one guardian must set the global config."
+            }
+
+            div class="form-group mb-4" {
+                input type="checkbox" class="form-check-input toggle-control" id="is_lead" name="is_lead" value="true";
+
+                label class="form-check-label ms-2" for="is_lead" {
+                    "Set the global config"
+                }
+
+                div class="toggle-content mt-3" {
+                    input type="text" class="form-control" id="federation_name" name="federation_name" placeholder="Federation Name";
+
+                    div class="form-group mt-3" {
+                        label class="form-label" for="federation_size" {
+                            "Total number of guardians (including you)"
+                        }
+                        select class="form-select" id="federation_size" name="federation_size" {
+                            option value="" selected disabled { "Federation Size" }
+                            option value="1" { "1 — Testing" }
+                            option value="4" { "4 — Recommended" }
+                            option value="5" { "5" }
+                            option value="6" { "6" }
+                            option value="7" { "7 — Recommended" }
+                            option value="8" { "8" }
+                            option value="9" { "9" }
+                            option value="10" { "10 — Recommended" }
+                            option value="11" { "11" }
+                            option value="12" { "12" }
+                            option value="13" { "13 — Recommended" }
+                            option value="14" { "14" }
+                            option value="15" { "15" }
+                            option value="16" { "16 — Recommended" }
+                            option value="17" { "17" }
+                            option value="18" { "18" }
+                            option value="19" { "19 — Recommended" }
+                            option value="20" { "20" }
+                        }
+                    }
+
+                    div class="form-check mt-3" {
+                        input type="checkbox" class="form-check-input" id="enable_base_fees" name="enable_base_fees" checked value="true";
+
+                        label class="form-check-label" for="enable_base_fees" {
+                            "Enable base fees for this federation"
+                        }
+                    }
+
+                    div id="base-fees-warning" class="alert alert-warning mt-2" style="font-size: 0.875rem;" {
+                        strong { "Warning: " }
+                        "Base fees discourage spam and wasting storage space. The typical fee is only 1-3 sats per transaction, regardless of the value transferred. We recommend enabling the base fee and it cannot be changed later."
+                    }
+
+                    div class="accordion mt-3" id="modulesAccordion" {
+                        div class="accordion-item" {
+                            h2 class="accordion-header" {
+                                button class="accordion-button collapsed" type="button"
+                                    data-bs-toggle="collapse" data-bs-target="#modulesConfig"
+                                    aria-expanded="false" aria-controls="modulesConfig" {
+                                    "Advanced: Configure Enabled Modules"
+                                }
+                            }
+                            div id="modulesConfig" class="accordion-collapse collapse" data-bs-parent="#modulesAccordion" {
+                                div class="accordion-body" {
+                                    div id="modules-list" {
+                                        @for kind in available_modules {
+                                            div class="form-check" {
+                                                input type="checkbox" class="form-check-input"
+                                                    id=(format!("module_{}", kind.as_str()))
+                                                    name="enabled_modules"
+                                                    value=(kind.as_str())
+                                                    checked[default_modules.contains(kind)];
+
+                                                label class="form-check-label" for=(format!("module_{}", kind.as_str())) {
+                                                    (kind.as_str())
+                                                    @if !default_modules.contains(kind) {
+                                                        span class="badge bg-warning text-dark ms-2" { "experimental" }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    div id="modules-warning" class="alert alert-warning mt-2 mb-0" style="font-size: 0.875rem;" {
+                                        "Only modify this if you know what you are doing. Disabled modules cannot be enabled later."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            @if let Some(error) = error {
+                div class="alert alert-danger mb-3" { (error) }
+            }
+            button type="submit" class="btn btn-primary w-100 py-2" { "Confirm" }
+        }
+    }
+}
+
+// GET handler for the /setup route (display the setup form)
+async fn setup_form(State(state): State<UiState<DynSetupApi>>) -> impl IntoResponse {
+    if state.api.setup_code().await.is_some() {
+        return Redirect::to(FEDERATION_SETUP_ROUTE).into_response();
+    }
+
+    let available_modules = state.api.available_modules();
+    let default_modules = state.api.default_modules();
+    let content = setup_form_content(&available_modules, &default_modules, None);
+
+    Html(single_card_layout("Guardian Setup", content).into_string()).into_response()
+}
+
+// POST handler for the /setup route (process the setup form)
+async fn setup_submit(
+    State(state): State<UiState<DynSetupApi>>,
+    Form(input): Form<SetupInput>,
+) -> impl IntoResponse {
+    let available_modules = state.api.available_modules();
+    let default_modules = state.api.default_modules();
+
+    // Only use these settings if is_lead is true
+    let federation_name = if input.is_lead {
+        Some(input.federation_name)
+    } else {
+        None
+    };
+
+    let disable_base_fees = if input.is_lead {
+        Some(!input.enable_base_fees)
+    } else {
+        None
+    };
+
+    let enabled_modules = if input.is_lead {
+        let enabled: BTreeSet<ModuleKind> = input
+            .enabled_modules
+            .into_iter()
+            .map(|s| ModuleKind::clone_from_str(&s))
+            .collect();
+
+        Some(enabled)
+    } else {
+        None
+    };
+
+    let federation_size = if input.is_lead {
+        let s = input.federation_size.trim();
+        if s.is_empty() {
+            None
+        } else {
+            match s.parse::<u32>() {
+                Ok(size) => Some(size),
+                Err(_) => {
+                    return Html(
+                        setup_form_content(
+                            &available_modules,
+                            &default_modules,
+                            Some("Invalid federation size"),
+                        )
+                        .into_string(),
+                    )
+                    .into_response();
+                }
+            }
+        }
+    } else {
+        None
+    };
+
+    match state
+        .api
+        .set_local_parameters(
+            ApiAuth::new(input.password),
+            input.name,
+            federation_name,
+            disable_base_fees,
+            enabled_modules,
+            federation_size,
+        )
+        .await
+    {
+        Ok(_) => (
+            [("HX-Redirect", FEDERATION_SETUP_ROUTE)],
+            Html(String::new()),
+        )
+            .into_response(),
+        Err(e) => Html(
+            setup_form_content(&available_modules, &default_modules, Some(&e.to_string()))
+                .into_string(),
+        )
+        .into_response(),
+    }
+}
+
+// GET handler for the /login route (display the login form)
+async fn login_form_handler(State(state): State<UiState<DynSetupApi>>) -> impl IntoResponse {
+    if state.api.setup_code().await.is_none() {
+        return Redirect::to(ROOT_ROUTE).into_response();
+    }
+
+    Html(single_card_layout("Enter Password", login_form(None)).into_string()).into_response()
+}
+
+// POST handler for the /login route (authenticate and set session cookie)
+async fn login_submit(
+    State(state): State<UiState<DynSetupApi>>,
+    jar: CookieJar,
+    Form(input): Form<LoginInput>,
+) -> impl IntoResponse {
+    let auth = match state.api.auth().await {
+        Some(auth) => auth,
+        None => return Redirect::to(ROOT_ROUTE).into_response(),
+    };
+
+    login_submit_response(
+        auth,
+        state.auth_cookie_name,
+        state.auth_cookie_value,
+        jar,
+        input,
+    )
+    .into_response()
+}
+
+// GET handler for the /federation-setup route (main federation management page)
+async fn federation_setup(
+    State(state): State<UiState<DynSetupApi>>,
+    _auth: UserAuth,
+) -> impl IntoResponse {
+    let our_connection_info = state
+        .api
+        .setup_code()
+        .await
+        .expect("Successful authentication ensures that the local parameters have been set");
+
+    let connected_peers = state.api.connected_peers().await;
+    let federation_size = state.api.federation_size().await;
+    let cfg_federation_name = state.api.cfg_federation_name().await;
+    let cfg_base_fees_disabled = state.api.cfg_base_fees_disabled().await;
+    let cfg_enabled_modules = state.api.cfg_enabled_modules().await;
+
+    let content = html! {
+        p { "Share this with your fellow guardians." }
+
+        @let qr_svg = QrCode::new(&our_connection_info)
+            .expect("Failed to generate QR code")
+            .render::<qrcode::render::svg::Color>()
+            .build();
+
+        div class="text-center mb-3" {
+            div class="border rounded p-2 bg-white d-inline-block" style="width: 250px; max-width: 100%;" {
+                div style="width: 100%; height: auto; overflow: hidden;" {
+                    (PreEscaped(format!(r#"<div style="width: 100%; height: auto;">{}</div>"#,
+                        qr_svg.replace("width=", "data-width=")
+                              .replace("height=", "data-height=")
+                              .replace("<svg", r#"<svg style="width: 100%; height: auto; display: block;""#))))
+                }
+            }
+        }
+
+        div class="mb-4" {
+            (copiable_text(&our_connection_info))
+        }
+
+        (peer_list_section(&connected_peers, federation_size, &cfg_federation_name, cfg_base_fees_disabled, &cfg_enabled_modules, None))
+
+        // QR Scanner Modal
+        div class="modal fade" id="qrScannerModal" tabindex="-1" aria-labelledby="qrScannerModalLabel" aria-hidden="true" {
+            div class="modal-dialog modal-dialog-centered" {
+                div class="modal-content" {
+                    div class="modal-header" {
+                        h5 class="modal-title" id="qrScannerModalLabel" { "Scan Setup Code" }
+                        button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" {}
+                    }
+                    div class="modal-body" {
+                        div id="qr-reader" style="width: 100%;" {}
+                        div id="qr-reader-error" class="alert alert-danger mt-3 d-none" {}
+                    }
+                    div class="modal-footer" {
+                        button type="button" class="btn btn-secondary" data-bs-dismiss="modal" { "Cancel" }
+                    }
+                }
+            }
+        }
+
+        script src="/assets/html5-qrcode.min.js" {}
+
+        // QR Scanner JavaScript
+        script {
+            (PreEscaped(r#"
+            var html5QrCode = null;
+            var qrScannerModal = null;
+
+            function startQrScanner() {
+                // Check for Flutter override hook
+                if (typeof window.fedimintQrScannerOverride === 'function') {
+                    window.fedimintQrScannerOverride(function(result) {
+                        if (result) {
+                            document.getElementById('peer_info').value = result;
+                        }
+                    });
+                    return;
+                }
+
+                var modalEl = document.getElementById('qrScannerModal');
+                qrScannerModal = new bootstrap.Modal(modalEl);
+
+                // Reset error message
+                var errorEl = document.getElementById('qr-reader-error');
+                errorEl.classList.add('d-none');
+                errorEl.textContent = '';
+
+                qrScannerModal.show();
+
+                // Wait for modal to be shown before starting camera
+                modalEl.addEventListener('shown.bs.modal', function onShown() {
+                    modalEl.removeEventListener('shown.bs.modal', onShown);
+                    initializeScanner();
+                });
+
+                // Clean up when modal is hidden
+                modalEl.addEventListener('hidden.bs.modal', function onHidden() {
+                    modalEl.removeEventListener('hidden.bs.modal', onHidden);
+                    stopQrScanner();
+                });
+            }
+
+            function initializeScanner() {
+                html5QrCode = new Html5Qrcode("qr-reader");
+
+                var config = {
+                    fps: 10,
+                    qrbox: { width: 250, height: 250 },
+                    aspectRatio: 1.0
+                };
+
+                html5QrCode.start(
+                    { facingMode: "environment" },
+                    config,
+                    function(decodedText, decodedResult) {
+                        // Success - populate input and close modal
+                        document.getElementById('peer_info').value = decodedText;
+                        qrScannerModal.hide();
+                    },
+                    function(errorMessage) {
+                        // Ignore scan errors (happens constantly while searching)
+                    }
+                ).catch(function(err) {
+                    var errorEl = document.getElementById('qr-reader-error');
+                    errorEl.textContent = 'Unable to access camera: ' + err;
+                    errorEl.classList.remove('d-none');
+                });
+            }
+
+            function stopQrScanner() {
+                if (html5QrCode && html5QrCode.isScanning) {
+                    html5QrCode.stop().catch(function(err) {
+                        console.error('Error stopping scanner:', err);
+                    });
+                }
+            }
+            "#))
+        }
+    };
+
+    Html(single_card_layout("Federation Setup", content).into_string()).into_response()
+}
+
+// POST handler for adding peer connection info
+async fn post_add_setup_code(
+    State(state): State<UiState<DynSetupApi>>,
+    _auth: UserAuth,
+    Form(input): Form<PeerInfoInput>,
+) -> impl IntoResponse {
+    let error = state.api.add_peer_setup_code(input.peer_info).await.err();
+
+    let connected_peers = state.api.connected_peers().await;
+    let federation_size = state.api.federation_size().await;
+    let cfg_federation_name = state.api.cfg_federation_name().await;
+    let cfg_base_fees_disabled = state.api.cfg_base_fees_disabled().await;
+    let cfg_enabled_modules = state.api.cfg_enabled_modules().await;
+
+    Html(
+        peer_list_section(
+            &connected_peers,
+            federation_size,
+            &cfg_federation_name,
+            cfg_base_fees_disabled,
+            &cfg_enabled_modules,
+            error.as_ref().map(|e| e.to_string()).as_deref(),
+        )
+        .into_string(),
+    )
+    .into_response()
+}
+
+// POST handler for starting the DKG process
+async fn post_start_dkg(
+    State(state): State<UiState<DynSetupApi>>,
+    _auth: UserAuth,
+) -> impl IntoResponse {
+    let our_connection_info = state.api.setup_code().await;
+
+    match state.api.start_dkg().await {
+        Ok(()) => {
+            let content = html! {
+                @if let Some(ref info) = our_connection_info {
+                    p { "Share with guardians who still need it." }
+                    div class="mb-4" {
+                        (copiable_text(info))
+                    }
+                }
+
+                div class="alert alert-info mb-3" {
+                    "All guardians need to confirm their settings. Once completed you will be redirected to the Dashboard."
+                }
+
+                // Poll until the dashboard is ready, then redirect
+                div
+                    hx-get=(ROOT_ROUTE)
+                    hx-trigger="every 2s"
+                    hx-swap="none"
+                    hx-on--after-request={
+                        "if (event.detail.xhr.status === 200) { window.location.href = '" (ROOT_ROUTE) "'; }"
+                    }
+                    style="display: none;"
+                {}
+
+                div class="text-center mt-4" {
+                    div class="spinner-border text-primary" role="status" {
+                        span class="visually-hidden" { "Loading..." }
+                    }
+                    p class="mt-2 text-muted" { "Waiting for federation setup to complete..." }
+                }
+            };
+
+            (
+                [("HX-Retarget", "body"), ("HX-Reswap", "innerHTML")],
+                Html(single_card_layout("DKG Started", content).into_string()),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            let connected_peers = state.api.connected_peers().await;
+            let federation_size = state.api.federation_size().await;
+            let cfg_federation_name = state.api.cfg_federation_name().await;
+            let cfg_base_fees_disabled = state.api.cfg_base_fees_disabled().await;
+            let cfg_enabled_modules = state.api.cfg_enabled_modules().await;
+
+            Html(
+                peer_list_section(
+                    &connected_peers,
+                    federation_size,
+                    &cfg_federation_name,
+                    cfg_base_fees_disabled,
+                    &cfg_enabled_modules,
+                    Some(&e.to_string()),
+                )
+                .into_string(),
+            )
+            .into_response()
+        }
+    }
+}
+
+// POST handler for resetting peer connection info
+async fn post_reset_setup_codes(
+    State(state): State<UiState<DynSetupApi>>,
+    _auth: UserAuth,
+) -> impl IntoResponse {
+    state.api.reset_setup_codes().await;
+
+    Redirect::to(FEDERATION_SETUP_ROUTE).into_response()
+}
+
+pub fn router(api: DynSetupApi) -> Router {
+    Router::new()
+        .route(ROOT_ROUTE, get(setup_form).post(setup_submit))
+        .route(LOGIN_ROUTE, get(login_form_handler).post(login_submit))
+        .route(FEDERATION_SETUP_ROUTE, get(federation_setup))
+        .route(ADD_SETUP_CODE_ROUTE, post(post_add_setup_code))
+        .route(RESET_SETUP_CODES_ROUTE, post(post_reset_setup_codes))
+        .route(START_DKG_ROUTE, post(post_start_dkg))
+        .route(
+            CONNECTIVITY_CHECK_ROUTE,
+            get(connectivity_check_handler::<DynSetupApi>),
+        )
+        .with_static_routes()
+        .with_state(UiState::new(api))
+}

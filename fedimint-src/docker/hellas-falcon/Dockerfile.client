@@ -1,0 +1,36 @@
+# Build stage
+FROM rust:1.87-slim AS builder
+
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    libclang-dev \
+    clang \
+    cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY . .
+
+RUN cargo build --release \
+    --bin falcon-spammer \
+    --bin falcon-dashboard \
+    2>&1
+
+# Runtime stage
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -m -u 1000 falcon
+USER falcon
+
+COPY --from=builder /src/target/release/falcon-spammer   /usr/local/bin/falcon-spammer
+COPY --from=builder /src/target/release/falcon-dashboard /usr/local/bin/falcon-dashboard
+
+VOLUME ["/data"]
+
+CMD ["/bin/bash"]

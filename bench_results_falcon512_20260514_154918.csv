@@ -1,0 +1,6 @@
+hardware,target_tps,achieved_tps,duration_s,submitted,accepted,rejected,avg_latency_ms,bytes_per_tx
+4-guardian Falcon-512 BFT · Docker · Apple M4 · 2 vCPU + 2 GB / guardian,1000,997.9,30,29938,29938,0,0,730
+4-guardian Falcon-512 BFT · Docker · Apple M4 · 2 vCPU + 2 GB / guardian,1100,1100.2,30,33005,33005,0,0,730
+4-guardian Falcon-512 BFT · Docker · Apple M4 · 2 vCPU + 2 GB / guardian,1200,1200.5,30,36015,36015,0,3,730
+4-guardian Falcon-512 BFT · Docker · Apple M4 · 2 vCPU + 2 GB / guardian,1300,1300.4,30,39013,39013,0,190,730
+4-guardian Falcon-512 BFT · Docker · Apple M4 · 2 vCPU + 2 GB / guardian,1400,1400.5,30,42016,42014,2,1233,730

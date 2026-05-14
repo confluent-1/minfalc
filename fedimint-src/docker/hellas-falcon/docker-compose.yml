@@ -1,0 +1,150 @@
+---
+# hellas-falcon-bench: 4-guardian BFT federation with Falcon-512 tx signatures.
+#
+# Network topology:
+#   guardian-0..3  — AlephBFT federation nodes (fedimintd)
+#   client         — spammer + dashboard container
+#
+# All containers share the `falcon-net` bridge. Static DNS hostnames are used
+# instead of service discovery (FM_P2P_URL / FM_API_URL point at hostnames).
+#
+# Start:     docker compose up --build
+# Run bench: docker compose exec client falcon-spammer --tps 100 --duration 60
+# Dashboard: docker compose exec -it client falcon-dashboard
+# Stop:      docker compose down -v
+
+version: "3.9"
+
+x-guardian-common: &guardian-common
+  build:
+    context: ../..
+    dockerfile: docker/hellas-falcon/Dockerfile.guardian
+  restart: unless-stopped
+  networks:
+    - falcon-net
+  environment:
+    FM_BITCOIN_NETWORK: regtest
+    FM_ENABLE_IROH: "false"
+    FM_REL_NOTES_ACK: "0_11_0"
+  healthcheck:
+    test: ["CMD-SHELL", "curl -sf http://localhost:8174/fedimint/v2/status || exit 1"]
+    interval: 10s
+    timeout: 5s
+    retries: 12
+    start_period: 30s
+
+services:
+  # ──────────────────── Guardians ────────────────────
+
+  guardian-0:
+    <<: *guardian-common
+    hostname: guardian-0
+    container_name: hellas-guardian-0
+    volumes:
+      - guardian-0-data:/data
+    environment:
+      FM_BITCOIN_NETWORK: regtest
+      FM_ENABLE_IROH: "false"
+      FM_REL_NOTES_ACK: "0_11_0"
+      FM_PEER_ID: "0"
+      FM_BIND_P2P: "0.0.0.0:8173"
+      FM_BIND_API: "0.0.0.0:8174"
+      FM_P2P_URL: "fedimint://guardian-0:8173"
+      FM_API_URL: "ws://guardian-0:8174"
+
+  guardian-1:
+    <<: *guardian-common
+    hostname: guardian-1
+    container_name: hellas-guardian-1
+    volumes:
+      - guardian-1-data:/data
+    environment:
+      FM_BITCOIN_NETWORK: regtest
+      FM_ENABLE_IROH: "false"
+      FM_REL_NOTES_ACK: "0_11_0"
+      FM_PEER_ID: "1"
+      FM_BIND_P2P: "0.0.0.0:8173"
+      FM_BIND_API: "0.0.0.0:8174"
+      FM_P2P_URL: "fedimint://guardian-1:8173"
+      FM_API_URL: "ws://guardian-1:8174"
+    depends_on:
+      guardian-0:
+        condition: service_healthy
+
+  guardian-2:
+    <<: *guardian-common
+    hostname: guardian-2
+    container_name: hellas-guardian-2
+    volumes:
+      - guardian-2-data:/data
+    environment:
+      FM_BITCOIN_NETWORK: regtest
+      FM_ENABLE_IROH: "false"
+      FM_REL_NOTES_ACK: "0_11_0"
+      FM_PEER_ID: "2"
+      FM_BIND_P2P: "0.0.0.0:8173"
+      FM_BIND_API: "0.0.0.0:8174"
+      FM_P2P_URL: "fedimint://guardian-2:8173"
+      FM_API_URL: "ws://guardian-2:8174"
+    depends_on:
+      guardian-0:
+        condition: service_healthy
+
+  guardian-3:
+    <<: *guardian-common
+    hostname: guardian-3
+    container_name: hellas-guardian-3
+    volumes:
+      - guardian-3-data:/data
+    environment:
+      FM_BITCOIN_NETWORK: regtest
+      FM_ENABLE_IROH: "false"
+      FM_REL_NOTES_ACK: "0_11_0"
+      FM_PEER_ID: "3"
+      FM_BIND_P2P: "0.0.0.0:8173"
+      FM_BIND_API: "0.0.0.0:8174"
+      FM_P2P_URL: "fedimint://guardian-3:8173"
+      FM_API_URL: "ws://guardian-3:8174"
+    depends_on:
+      guardian-0:
+        condition: service_healthy
+
+  # ──────────────────── Client ────────────────────
+
+  client:
+    build:
+      context: ../..
+      dockerfile: docker/hellas-falcon/Dockerfile.client
+    container_name: hellas-client
+    hostname: client
+    networks:
+      - falcon-net
+    volumes:
+      - metrics-data:/data
+    environment:
+      FEDERATION_URL: "ws://guardian-0:8174"
+    depends_on:
+      guardian-0:
+        condition: service_healthy
+      guardian-1:
+        condition: service_healthy
+      guardian-2:
+        condition: service_healthy
+      guardian-3:
+        condition: service_healthy
+    # Keep container alive so you can exec into it.
+    command: ["tail", "-f", "/dev/null"]
+
+networks:
+  falcon-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  guardian-0-data:
+  guardian-1-data:
+  guardian-2-data:
+  guardian-3-data:
+  metrics-data:

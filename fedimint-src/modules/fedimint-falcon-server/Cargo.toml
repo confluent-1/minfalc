@@ -1,0 +1,28 @@
+[package]
+authors = { workspace = true }
+description = "Falcon-512 transfer module server — hellas-falcon-bench"
+edition = { workspace = true }
+license = { workspace = true }
+name = "fedimint-falcon-server"
+readme = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+
+[lib]
+name = "fedimint_falcon_server"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+erased-serde = { workspace = true }
+fedimint-core = { workspace = true }
+fedimint-falcon-common = { workspace = true }
+fedimint-server-core = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+strum = { workspace = true }
+strum_macros = { workspace = true }
+
+[lints]
+workspace = true
